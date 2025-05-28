@@ -1,17 +1,19 @@
 import setuptools
 
-with open("README.md", "r") as fh:
+with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setuptools.setup(
     name="xcomfort",
-    version="0.0.20",
+    version="0.2.1",
     author="Jan Kristian Bjerke",
     author_email="jan.bjerke@gmail.com",
-    description="Integration with Eaton xComfort Bridge",
+    maintainer="oyvind overby"
+    maintainer_email="oyvind.overby@oywin.com"
+    description="Integration with Eaton xComfort Bridge (forked from Jankrib's original library with minor updates)",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/jankrib/xcomfort-python",
+    url="https://github.com/oywino/xcomfort-python",
     packages=setuptools.find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
