@@ -8,7 +8,7 @@ setuptools.setup(
     version="0.2.2",
     author="Jan Kristian Bjerke",
     author_email="jan.bjerke@gmail.com",
-    maintainer="oyvind overby"
+    maintainer="oyvind overby",
     maintainer_email="oyvind.overby@oywin.com",
     description="Integration with Eaton xComfort Bridge (forked from Jankrib's original library with minor updates)",
     long_description=long_description,
