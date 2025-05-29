@@ -1,6 +1,7 @@
 from contextlib import nullcontext
 import rx
 from .messages import Messages, ShadeOperationState  # Import ShadeOperationState
+from typing import Optional
 
 class DeviceState:
     def __init__(self, payload):
@@ -177,3 +178,24 @@ class Shade(BridgeDevice):
         """Move the shade to a specific position (0-100)."""
         if self.supports_go_to and 0 <= position <= 100:
             await self.send_state(ShadeOperationState.GO_TO, value=position)
+
+# New classes for DoorSensor, WindowSensor, and DoorWindowSensor
+class DoorWindowSensor(BridgeDevice):
+    def __init__(self, bridge, device_id, name, comp_id, payload):
+        BridgeDevice.__init__(self, bridge, device_id, name)
+        self.comp_id = comp_id
+        self.payload = payload
+        self.is_open: Optional[bool] = None
+        self.is_closed: Optional[bool] = None
+
+    def handle_state(self, payload):
+        if (state := payload.get("curstate")) is not None:
+            self.is_closed = state == 1
+            self.is_open = not self.is_closed
+        self.state.on_next(self.is_closed)
+
+class WindowSensor(DoorWindowSensor):
+    pass
+
+class DoorSensor(DoorWindowSensor):
+    pass
