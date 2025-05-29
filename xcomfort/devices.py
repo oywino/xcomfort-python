@@ -1,6 +1,6 @@
 from contextlib import nullcontext
 import rx
-from .messages import Messages, ShadeOperationState  # Import ShadeOperationState
+from .messages import Messages, ShadeOperationState
 from typing import Optional
 
 class DeviceState:
@@ -41,7 +41,6 @@ class HeaterState(DeviceState):
 
     __repr__ = __str__
 
-# New ShadeState class for detailed state management
 class ShadeState(DeviceState):
     def __init__(self):
         self.raw = {}
@@ -52,13 +51,10 @@ class ShadeState(DeviceState):
     def update_from_partial_state_update(self, payload: dict) -> None:
         """Aggregate partial state updates from the bridge."""
         self.raw.update(payload)
-
         if (current_state := payload.get("curstate")) is not None:
             self.current_state = current_state
-
         if (safety := payload.get("shSafety")) is not None:
             self.is_safety_enabled = safety != 0
-
         if (position := payload.get("shPos")) is not None:
             self.position = position
 
@@ -138,8 +134,8 @@ class Shade(BridgeDevice):
     def __init__(self, bridge, device_id, name, comp_id):
         BridgeDevice.__init__(self, bridge, device_id, name)
         self.comp_id = comp_id
-        self.__shade_state = ShadeState()  # Aggregate state across updates
-        self.payload = {}  # Store initial payload if needed later
+        self.__shade_state = ShadeState()
+        self.payload = {}
 
     @property
     def supports_go_to(self) -> bool | None:
@@ -150,13 +146,19 @@ class Shade(BridgeDevice):
 
     def handle_state(self, payload):
         """Update the shade state with incoming data."""
-        self.__shade_state.update_from_partial_state_update(payload)
+        new_state = ShadeState()
+        new_state.raw = self.__shade_state.raw.copy()
+        new_state.current_state = self.__shade_state.current_state
+        new_state.is_safety_enabled = self.__shade_state.is_safety_enabled
+        new_state.position = self.__shade_state.position
+        new_state.update_from_partial_state_update(payload)
+        self.__shade_state = new_state
         self.state.on_next(self.__shade_state)
 
     async def send_state(self, state, **kwargs):
         """Send a state command to the shade, respecting safety checks."""
         if self.__shade_state.is_safety_enabled:
-            return  # Skip if safety is enabled, per Jankrib’s logic
+            return
         await self.bridge.send_message(
             Messages.SET_DEVICE_SHADING_STATE,
             {"deviceId": self.device_id, "state": state, **kwargs}
@@ -179,7 +181,6 @@ class Shade(BridgeDevice):
         if self.supports_go_to and 0 <= position <= 100:
             await self.send_state(ShadeOperationState.GO_TO, value=position)
 
-# New classes for DoorSensor, WindowSensor, and DoorWindowSensor
 class DoorWindowSensor(BridgeDevice):
     def __init__(self, bridge, device_id, name, comp_id, payload):
         BridgeDevice.__init__(self, bridge, device_id, name)
