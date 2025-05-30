@@ -141,7 +141,7 @@ class Shade(BridgeDevice):
     def supports_go_to(self) -> bool | None:
         """Check if the shade supports precise position control."""
         if (component := self.bridge._comps.get(self.comp_id)) is not None:
-            return component.comp_type == 86 and self.payload.get("shRuntime") == 1
+            return component.comp_type == 86 and self.__shade_state.raw.get("shRuntime") == 1
         return None
 
     def handle_state(self, payload):
