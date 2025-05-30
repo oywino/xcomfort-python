@@ -4,8 +4,8 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="xcomfort-python",
-    version="0.3.7",
+    name="xcomfort",
+    version="0.3.8",
     author="Jan Kristian Bjerke",
     author_email="jan.bjerke@gmail.com",
     maintainer="oyvind overby",
