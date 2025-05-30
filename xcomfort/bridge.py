@@ -1,14 +1,26 @@
-from unicodedata import numeric
-import aiohttp
 import asyncio
-import string
-import time
-import rx
-import rx.operators as ops
 from enum import Enum
+from typing import Optional
+
+import aiohttp
+
+from .comp import Comp, CompState  # noqa
 from .connection import SecureBridgeConnection, setup_secure_connection
-from .messages import Messages
-from .devices import (BridgeDevice, Light, RcTouch, Heater, Shade)
+from .constants import ComponentTypes, DeviceTypes, Messages
+from .devices import (
+    BridgeDevice,
+    DoorSensor,
+    Heater,
+    Light,
+    RcTouch,
+    Rocker,
+    Shade,
+    WindowSensor,
+)
+
+# Some HA code relies on bridge having imported these:
+from .room import RctMode, RctModeRange, RctState, Room, RoomState  # noqa
+
 
 class State(Enum):
     Uninitialized = 0
@@ -16,133 +28,6 @@ class State(Enum):
     Ready = 2
     Closing = 10
 
-class RctMode(Enum):
-    Cool = 1
-    Eco = 2
-    Comfort = 3
-
-class RctState(Enum):
-    Idle = 0
-    Active = 2
-
-class RctModeRange:
-    def __init__(self, min: float, max: float):
-        self.Min = min
-        self.Max = max
-
-class CompState:
-    def __init__(self, raw):
-        self.raw = raw
-
-    def __str__(self):
-        return f"CompState({self.raw})"
-
-    __repr__ = __str__
-
-class Comp:
-    def __init__(self, bridge, comp_id, comp_type, name: str):
-        self.bridge = bridge
-        self.comp_id = comp_id
-        self.comp_type = comp_type
-        self.name = name
-
-        self.state = rx.subject.BehaviorSubject(None)
-
-    def handle_state(self, payload):
-        self.state.on_next(CompState(payload))
-
-    def __str__(self):
-        return f"Comp({self.comp_id}, \"{self.name}\", comp_type: {self.comp_type})"
-
-    __repr__ = __str__
-
-class RoomState:
-    def __init__(self, setpoint, temperature, humidity, power, mode: RctMode, state: RctState, raw):
-        self.setpoint = setpoint
-        self.temperature = temperature
-        self.humidity = humidity
-        self.power = power
-        self.mode = mode
-        self.raw = raw
-        self.rctstate = state
-
-    def __str__(self):
-        return f"RoomState({self.setpoint}, {self.temperature}, {self.humidity}, {self.mode}, {self.rctstate} {self.power})"
-
-    __repr__ = __str__
-
-class Room:
-    def __init__(self, bridge, room_id, name: str):
-        self.bridge = bridge
-        self.room_id = room_id
-        self.name = name
-        self.state = rx.subject.BehaviorSubject(None)
-        self.modesetpoints = dict()
-
-    def handle_state(self, payload):
-        old_state = self.state.value
-
-        if old_state is not None:
-            old_state.raw.update(payload)
-            payload = old_state.raw
-
-        setpoint = payload.get('setpoint', None)
-        temperature = payload.get('temp', None)
-        humidity = payload.get('humidity', None)
-        power = payload.get('power', 0.0)
-        if 'currentMode' in payload:                # When handling from _SET_ALL_DATA
-            mode = RctMode(payload.get('currentMode', None))
-        if 'mode' in payload:                       # When handling from _SET_STATE_INFO
-            mode = RctMode(payload.get('mode', None))
-
-        # When handling from _SET_ALL_DATA, we get the setpoints for each mode/preset
-        # Store these for later use
-        if 'modes' in payload:
-            for mode in payload["modes"]:
-                self.modesetpoints[RctMode(mode["mode"])] = float(mode["value"])
-
-        currentstate = RctState(payload.get('state', None))
-
-        self.state.on_next(RoomState(setpoint, temperature, humidity, power, mode, currentstate, payload))
-
-    async def set_target_temperature(self, setpoint: float):
-        # Validate that new setpoint is within allowed ranges.
-        # if above/below allowed values, set to the edge value
-        setpointrange = self.bridge.rctsetpointallowedvalues[RctMode(self.state.value.mode)]
-
-        if setpointrange.Max < setpoint:
-            setpoint = setpointrange.Max
-
-        if setpoint < setpointrange.Min:
-            setpoint = setpointrange.Min
-
-        # Store new setpoint for current mode
-        self.modesetpoints[self.state.value.mode.value] = setpoint
-
-        await self.bridge.send_message(Messages.SET_HEATING_STATE, {
-            "roomId": self.room_id,
-            "mode": self.state.value.mode.value,
-            "state": self.state.value.rctstate.value,
-            "setpoint": setpoint,
-            "confirmed": False
-        })
-
-    async def set_mode(self, mode: RctMode):
-        # Find setpoint for the mode we are about to set, and use that
-        # When transmitting heating_state message.
-        newsetpoint = self.modesetpoints.get(mode)
-        await self.bridge.send_message(Messages.SET_HEATING_STATE, {
-            "roomId": self.room_id,
-            "mode": mode.value,
-            "state": self.state.value.rctstate.value,
-            "setpoint": newsetpoint,
-            "confirmed": False
-        })
-
-    def __str__(self):
-        return f"Room({self.room_id}, \"{self.name}\")"
-
-    __repr__ = __str__
 
 class Bridge:
     def __init__(self, ip_address: str, authkey: str, session=None):
@@ -159,16 +44,18 @@ class Bridge:
         self._closeSession = closeSession
 
         # Values determined from using setpoint slider in app.
-        self.rctsetpointallowedvalues = dict({
-            RctMode.Cool: RctModeRange(5.0, 20.0),
-            RctMode.Eco: RctModeRange(10.0, 30.0),
-            RctMode.Comfort: RctModeRange(18.0, 40.0)
-        })
+        self.rctsetpointallowedvalues = dict(
+            {
+                RctMode.Cool: RctModeRange(5.0, 20.0),
+                RctMode.Eco: RctModeRange(10.0, 30.0),
+                RctMode.Comfort: RctModeRange(18.0, 40.0),
+            }
+        )
         self._comps = {}
         self._devices = {}
         self._rooms = {}
         self.state = State.Uninitialized
-        self.on_initialized = asyncio.Event()  # Added initialization event
+        self.on_initialized = asyncio.Event()
         self.connection = None
         self.connection_subscription = None
         self.logger = lambda x: None
@@ -184,6 +71,7 @@ class Bridge:
                 # self.logger(f"Connecting...")
                 await self._connect()
                 await self.connection.pump()
+
             except Exception as e:
                 self.logger(f"Error: {repr(e)}")
                 await asyncio.sleep(5)
@@ -251,15 +139,37 @@ class Bridge:
         dev_type = payload["devType"]
         comp_id = payload["compId"]
 
-        if dev_type == 100 or dev_type == 101:
-            dimmable = payload['dimmable']
-            return Light(self, device_id, name, dimmable)
-        if dev_type == 102:
+        # --- Smartstikk fix (without touching shades) ---
+        if dev_type in (DeviceTypes.ACTUATOR_SWITCH, DeviceTypes.ACTUATOR_DIMM):
+            # In previous versions, if usage was 0 it was considered a light.
+            # Here, if usage is not 0, we assume it's a smartstikk and return a Rocker.
+            if payload.get("usage", 0) == 0:
+                dimmable = payload["dimmable"]
+                return Light(self, device_id, name, dimmable)
+            else:
+                return Rocker(self, device_id, name, comp_id, payload)
+
+        elif dev_type == DeviceTypes.SHADING_ACTUATOR:
+            # Use the exact shade handling from bridge.py.1.txt
             return Shade(self, device_id, name, comp_id)
-        if dev_type == 440:
+
+        elif dev_type == DeviceTypes.HEATING_ACTUATOR:
             return Heater(self, device_id, name, comp_id)
-        if dev_type == 450:
+
+        elif dev_type == DeviceTypes.RC_TOUCH:
             return RcTouch(self, device_id, name, comp_id)
+
+        elif dev_type == DeviceTypes.SWITCH:
+            component: Optional[Comp] = self._comps.get(comp_id)
+            if component and component.comp_type == ComponentTypes.DOOR_WINDOW_SENSOR:
+                if component.payload.get("mode") == "1310":
+                    return DoorSensor(self, device_id, name, comp_id, payload)
+                return WindowSensor(self, device_id, name, comp_id, payload)
+
+        elif dev_type == DeviceTypes.ROCKER:
+            # What Xcomfort calls a rocker (a switch)
+            return Rocker(self, device_id, name, comp_id, payload)
+
         return BridgeDevice(self, device_id, name)
 
     def _create_room_from_payload(self, payload):
