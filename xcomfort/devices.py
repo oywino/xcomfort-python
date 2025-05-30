@@ -37,7 +37,7 @@ class HeaterState(DeviceState):
         DeviceState.__init__(self, payload)
 
     def __str__(self):
-        return f"HeaterState({self.raw})"
+        return f"HeaterState({self.payload})"
 
     __repr__ = __str__
 
@@ -131,22 +131,19 @@ class Heater(BridgeDevice):
         self.comp_id = comp_id
 
 class Shade(BridgeDevice):
-    def __init__(self, bridge, device_id, name, comp_id, payload: Optional[dict] = None):
+    def __init__(self, bridge, device_id, name, comp_id):
         BridgeDevice.__init__(self, bridge, device_id, name)
         self.comp_id = comp_id
         self.__shade_state = ShadeState()
         self.payload = {}
-        if payload:
-            self.payload.update(payload)
-            self.__shade_state.update_from_partial_state_update(payload)
 
     @property
-    def supports_go_to(self) -> bool:
+    def supports_go_to(self) -> bool | None:
         """Check if the shade supports precise position control."""
         if (component := self.bridge._comps.get(self.comp_id)) is not None:
-            # Instead of checking the raw dictionary, we now check if a valid position has been set.
-            return component.comp_type == 86 and (self.__shade_state.position is not None)
-        return False
+            # Check if 'shPos' is present in the state data, indicating position control support
+            return component.comp_type == 86 and "shPos" in self.__shade_state.raw
+        return None
     
     def handle_state(self, payload):
         """Update the shade state with incoming data."""
@@ -222,6 +219,7 @@ class Rocker(BridgeDevice):
             device = self.bridge._devices.get(device_id)
             if device:
                 names_of_controlled.add(device.name)
+
         return f"{self.name} ({', '.join(sorted(names_of_controlled))})"
 
     def handle_state(self, payload, broadcast: bool = True) -> None:
