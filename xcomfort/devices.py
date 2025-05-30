@@ -139,6 +139,7 @@ class Shade(BridgeDevice):
 
     @property
     def supports_go_to(self) -> bool:
+        raise Exception("Temporary exception: supports_go_to property called")
         return True
 
     def handle_state(self, payload):
