@@ -44,13 +44,11 @@ class Bridge:
         self._closeSession = closeSession
 
         # Values determined from using setpoint slider in app.
-        self.rctsetpointallowedvalues = dict(
-            {
-                RctMode.Cool: RctModeRange(5.0, 20.0),
-                RctMode.Eco: RctModeRange(10.0, 30.0),
-                RctMode.Comfort: RctModeRange(18.0, 40.0),
-            }
-        )
+        self.rctsetpointallowedvalues = {
+            RctMode.Cool: RctModeRange(5.0, 20.0),
+            RctMode.Eco: RctModeRange(10.0, 30.0),
+            RctMode.Comfort: RctModeRange(18.0, 40.0)
+        }
         self._comps = {}
         self._devices = {}
         self._rooms = {}
@@ -71,7 +69,6 @@ class Bridge:
                 # self.logger(f"Connecting...")
                 await self._connect()
                 await self.connection.pump()
-
             except Exception as e:
                 self.logger(f"Error: {repr(e)}")
                 await asyncio.sleep(5)
@@ -139,18 +136,21 @@ class Bridge:
         dev_type = payload["devType"]
         comp_id = payload["compId"]
 
-        # --- Smartstikk fix (without touching shades) ---
+        # For ACTUATOR_SWITCH/ACTUATOR_DIMM devices (which can be lights or smartstikks)
         if dev_type in (DeviceTypes.ACTUATOR_SWITCH, DeviceTypes.ACTUATOR_DIMM):
-            # In previous versions, if usage was 0 it was considered a light.
-            # Here, if usage is not 0, we assume it's a smartstikk and return a Rocker.
-            if payload.get("usage", 0) == 0:
+            # Try to retrieve the associated component
+            component = self._comps.get(comp_id)
+            # If the component exists and its payload indicates a nonzero 'usage', treat as smartstikk
+            if component and component.payload.get("usage", 0) != 0:
+                return Rocker(self, device_id, name, comp_id, payload)
+            # Otherwise, default to a Light
+            else:
                 dimmable = payload["dimmable"]
                 return Light(self, device_id, name, dimmable)
-            else:
-                return Rocker(self, device_id, name, comp_id, payload)
 
         elif dev_type == DeviceTypes.SHADING_ACTUATOR:
-            # Use the exact shade handling from bridge.py.1.txt
+            # IMPORTANT: To keep shades working exactly as in bridge.py.1.txt,
+            # we do not pass the payload when creating a Shade.
             return Shade(self, device_id, name, comp_id)
 
         elif dev_type == DeviceTypes.HEATING_ACTUATOR:
