@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="xcomfort-python",
-    version="0.2.5",
+    version="0.3.1",
     author="Jan Kristian Bjerke",
     author_email="jan.bjerke@gmail.com",
     maintainer="oyvind overby",
