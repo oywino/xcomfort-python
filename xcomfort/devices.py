@@ -141,7 +141,7 @@ class Shade(BridgeDevice):
     def supports_go_to(self) -> bool | None:
         """Check if the shade supports precise position control."""
         if (component := self.bridge._comps.get(self.comp_id)) is not None:
-        # Check if 'shPos' is present in the state data, indicating position control support
+            # Check if 'shPos' is present in the state data, indicating position control support
             return component.comp_type == 86 and "shPos" in self.__shade_state.raw
         return None
     
@@ -201,3 +201,32 @@ class WindowSensor(DoorWindowSensor):
 
 class DoorSensor(DoorWindowSensor):
     pass
+
+class Rocker(BridgeDevice):
+    def __init__(self, bridge, device_id, name, comp_id, payload):
+        BridgeDevice.__init__(self, bridge, device_id, name)
+        self.comp_id = comp_id
+        self.payload = payload
+        self.is_on: bool | None = None
+        if "curstate" in payload:
+            self.is_on = bool(payload["curstate"])
+
+    @property
+    def name_with_controlled(self) -> str:
+        """Name of Rocker, with the names of controlled devices in parens."""
+        names_of_controlled: set[str] = set()
+        for device_id in self.payload.get("controlId", []):
+            device = self.bridge._devices.get(device_id)
+            if device:
+                names_of_controlled.add(device.name)
+
+        return f"{self.name} ({', '.join(sorted(names_of_controlled))})"
+
+    def handle_state(self, payload, broadcast: bool = True) -> None:
+        self.payload.update(payload)
+        self.is_on = bool(payload["curstate"])
+        if broadcast:
+            self.state.on_next(self.is_on)
+
+    def __str__(self):
+        return f'Rocker({self.device_id}, "{self.name}", is_on: {self.is_on} payload: {self.payload})'
