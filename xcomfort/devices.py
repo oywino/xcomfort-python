@@ -139,15 +139,7 @@ class Shade(BridgeDevice):
 
     @property
     def supports_go_to(self) -> bool:
-        if (component := self.bridge._comps.get(self.comp_id)) is not None:
-            # Try to get shRuntime from the dynamic state and fall back to payload.
-            sh_runtime = self.__shade_state.raw.get("shRuntime", self.payload.get("shRuntime"))
-            try:
-                sh_runtime = int(sh_runtime)
-            except (ValueError, TypeError):
-                sh_runtime = 0
-            return component.comp_type == 86 and sh_runtime == 1
-        return False
+        return True
 
     def handle_state(self, payload):
         """Update the shade state with incoming data."""
