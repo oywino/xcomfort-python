@@ -242,12 +242,14 @@ class Rocker(BridgeDevice):
         return f"{self.name} ({', '.join(sorted(names_of_controlled))})"
 
     def handle_state(self, payload, broadcast: bool = True) -> None:
+        print(f"Rocker {self.device_id} received state update: {payload}")
         self.payload.update(payload)
-        # Use 'curstate' instead of 'switch' to determine the state
         curstate = payload.get("curstate", self.is_on if self.is_on is not None else False)
         self.is_on = bool(curstate)
+        print(f"Rocker {self.device_id} computed is_on: {self.is_on}")
         if broadcast:
-            self.state.on_next(self.is_on)  # Broadcast boolean instead of RockerState
+            print(f"Rocker {self.device_id} broadcasting state: {self.is_on}")
+            self.state.on_next(RockerState(self.is_on, self.payload))
 
     def __str__(self):
         return f'Rocker({self.device_id}, "{self.name}", is_on: {self.is_on}, payload: {self.payload})'
@@ -265,19 +267,17 @@ class Switch(BridgeDevice):
         self.state = rx.subject.BehaviorSubject(None)
 
     def handle_state(self, payload, broadcast: bool = True) -> None:
+        print(f"Switch {self.device_id} received state update: {payload}")
         self.payload.update(payload)
         switch_state = payload.get("switch", self.is_on if self.is_on is not None else False)
         self.is_on = bool(switch_state)
+        print(f"Switch {self.device_id} computed is_on: {self.is_on}")
         if broadcast:
+            print(f"Switch {self.device_id} broadcasting state: {self.is_on}")
             self.state.on_next(SwitchState(self.is_on, self.payload))
 
     async def switch(self, switch: bool):
-        """Switch the outlet on or off.
-        
-        Note: Does not immediately update self.is_on - waits for bridge
-        to send state update via handle_state(). This ensures local state
-        remains consistent with actual device state.
-        """
+        """Switch the outlet on or off."""
         await self.bridge.switch_device(self.device_id, {"switch": switch})
 
     def __str__(self):
