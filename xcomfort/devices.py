@@ -82,6 +82,22 @@ class RockerState(DeviceState):
 
     __repr__ = __str__
 
+# Switch classes for xcomfort outlet devices
+# Note: Relies on existing imports in devices.py:
+# - from datetime import datetime
+# - import rx (with rx.subject.BehaviorSubject access pattern)
+
+class SwitchState(DeviceState):
+    def __init__(self, is_on, payload):
+        super().__init__(payload)
+        self.is_on = is_on
+        self.timestamp = datetime.now()
+
+    def __str__(self):
+        return f"SwitchState(is_on={self.is_on}, timestamp={self.timestamp}, payload={self.payload})"
+
+    __repr__ = __str__
+
 class BridgeDevice:
     def __init__(self, bridge, device_id, name):
         self.bridge = bridge
@@ -241,3 +257,36 @@ class Rocker(BridgeDevice):
 
     def __str__(self):
         return f'Rocker({self.device_id}, "{self.name}", is_on: {self.is_on}, payload: {self.payload})'
+
+class Switch(BridgeDevice):
+    def __init__(self, bridge, device_id, name, comp_id, payload):
+        super().__init__(bridge, device_id, name)
+        self.comp_id = comp_id
+        self.payload = payload.copy() if payload else {}
+        self.is_on = None
+        if isinstance(payload, dict) and "switch" in payload:
+            self.is_on = bool(payload["switch"])
+        elif isinstance(payload, bool):
+            self.is_on = payload
+        self.state = rx.subject.BehaviorSubject(None)
+
+    def handle_state(self, payload, broadcast: bool = True) -> None:
+        self.payload.update(payload)
+        switch_state = payload.get("switch", self.is_on if self.is_on is not None else False)
+        self.is_on = bool(switch_state)
+        if broadcast:
+            self.state.on_next(SwitchState(self.is_on, self.payload))
+
+    async def switch(self, switch: bool):
+        """Switch the outlet on or off.
+        
+        Note: Does not immediately update self.is_on - waits for bridge
+        to send state update via handle_state(). This ensures local state
+        remains consistent with actual device state.
+        """
+        await self.bridge.switch_device(self.device_id, {"switch": switch})
+
+    def __str__(self):
+        return f'Switch({self.device_id}, "{self.name}", is_on: {self.is_on}, payload: {self.payload})'
+
+    __repr__ = __str__
