@@ -250,23 +250,31 @@ class Bridge:
         name = payload['name']
         dev_type = payload["devType"]
         comp_id = payload["compId"]
-        usage = payload.get("usage", "unknown")
+        usage = payload.get("usage", 0)
         self.logger(f"Classifying device {name} with dev_type {dev_type} and usage {usage}")
 
-        if dev_type == 100 or dev_type == 101:
-            if int(payload.get("usage", 0)) == 1:
+        if dev_type == 100:
+            # For dev_type 100, check the usage marker.
+            if int(usage) == 1:
                 # Classify as Switch (Rocker) if usage is 1
                 return Rocker(self, device_id, name, comp_id, payload)
             else:
+                self.logger(f"Device {name} (dev_type 100) has usage {usage}: classifying as light")
                 # Classify as Light if usage is 0
                 return Light(self, device_id, name, payload.get("dimmable", False))
-        if dev_type == 102:
+        elif dev_type == 101:
+            self.logger(f"Device {name} (dev_type 101) classified as light")
+            return Light(self, device_id, name, payload.get("dimmable", False))
+        elif dev_type == 102:
             return Shade(self, device_id, name, comp_id)
-        if dev_type == 440:
+        elif dev_type == 440:
             return Heater(self, device_id, name, comp_id)
-        if dev_type == 450:
+        elif dev_type == 450:
             return RcTouch(self, device_id, name, comp_id)
-        return BridgeDevice(self, device_id, name)
+        else:
+            # Log unhandled dev_type before defaulting to BridgeDevice
+            self.logger(f"Device {name} with dev_type {dev_type} classified as BridgeDevice")
+            return BridgeDevice(self, device_id, name)
 
     def _create_room_from_payload(self, payload):
         room_id = payload['roomId']
