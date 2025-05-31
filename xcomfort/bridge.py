@@ -246,20 +246,23 @@ class Bridge:
         return Comp(self, comp_id, comp_type, name)
 
     def _create_device_from_payload(self, payload):
-        # Log the device name and dev_type for debugging
-        self.logger(f"Device {payload['name']} has dev_type {payload['devType']}")
         device_id = payload['deviceId']
         name = payload['name']
         dev_type = payload["devType"]
         comp_id = payload["compId"]
+        usage = payload.get("usage", "unknown")
+        self.logger(f"Classifying device {name} with dev_type {dev_type} and usage {usage}")
 
         if dev_type == 100 or dev_type == 101:
-            dimmable = payload['dimmable']
-            return Light(self, device_id, name, dimmable)
+            if payload.get("usage") == 0:
+                # Classify as Light if usage is 0
+                dimmable = payload['dimmable']
+                return Light(self, device_id, name, dimmable)
+            else:
+                # Classify as Switch (Rocker) if usage is 1
+                return Rocker(self, device_id, name, comp_id)
         if dev_type == 102:
             return Shade(self, device_id, name, comp_id)
-        if dev_type == 200:  # Added condition for switch devices (e.g., Smartstikk)
-            return Rocker(self, device_id, name, comp_id, payload)
         if dev_type == 440:
             return Heater(self, device_id, name, comp_id)
         if dev_type == 450:
