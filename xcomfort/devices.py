@@ -82,11 +82,6 @@ class RockerState(DeviceState):
 
     __repr__ = __str__
 
-# Switch classes for xcomfort outlet devices
-# Note: Relies on existing imports in devices.py:
-# - from datetime import datetime
-# - import rx (with rx.subject.BehaviorSubject access pattern)
-
 class SwitchState(DeviceState):
     def __init__(self, is_on, payload):
         super().__init__(payload)
@@ -171,7 +166,6 @@ class Shade(BridgeDevice):
     def supports_go_to(self) -> bool | None:
         """Check if the shade supports precise position control."""
         if (component := self.bridge._comps.get(self.comp_id)) is not None:
-            # Check if 'shPos' is present in the state data, indicating position control support
             return component.comp_type == 86 and "shPos" in self.__shade_state.payload
         return None
     
@@ -253,7 +247,7 @@ class Rocker(BridgeDevice):
         curstate = payload.get("curstate", self.is_on if self.is_on is not None else False)
         self.is_on = bool(curstate)
         if broadcast:
-            self.state.on_next(RockerState(self.is_on, self.payload))
+            self.state.on_next(self.is_on)  # Broadcast boolean instead of RockerState
 
     def __str__(self):
         return f'Rocker({self.device_id}, "{self.name}", is_on: {self.is_on}, payload: {self.payload})'
