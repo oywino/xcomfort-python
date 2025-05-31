@@ -246,6 +246,8 @@ class Bridge:
         return Comp(self, comp_id, comp_type, name)
 
     def _create_device_from_payload(self, payload):
+        # Log the device name and dev_type for debugging
+        self.logger(f"Device {payload['name']} has dev_type {payload['devType']}")
         device_id = payload['deviceId']
         name = payload['name']
         dev_type = payload["devType"]
