@@ -8,7 +8,7 @@ import rx.operators as ops
 from enum import Enum
 from .connection import SecureBridgeConnection, setup_secure_connection
 from .messages import Messages
-from .devices import (BridgeDevice, Light, RcTouch, Heater, Shade, Rocker, Switch)  # Added Switch import
+from .devices import (BridgeDevice, Light, RcTouch, Heater, Shade, Rocker, Switch)
 
 class State(Enum):
     Uninitialized = 0
@@ -45,7 +45,6 @@ class Comp:
         self.comp_id = comp_id
         self.comp_type = comp_type
         self.name = name
-
         self.state = rx.subject.BehaviorSubject(None)
 
     def handle_state(self, payload):
@@ -81,7 +80,6 @@ class Room:
 
     def handle_state(self, payload):
         old_state = self.state.value
-
         if old_state is not None:
             old_state.raw.update(payload)
             payload = old_state.raw
@@ -90,35 +88,25 @@ class Room:
         temperature = payload.get('temp', None)
         humidity = payload.get('humidity', None)
         power = payload.get('power', 0.0)
-        if 'currentMode' in payload:                # When handling from _SET_ALL_DATA
+        if 'currentMode' in payload:
             mode = RctMode(payload.get('currentMode', None))
-        if 'mode' in payload:                       # When handling from _SET_STATE_INFO
+        if 'mode' in payload:
             mode = RctMode(payload.get('mode', None))
 
-        # When handling from _SET_ALL_DATA, we get the setpoints for each mode/preset
-        # Store these for later use
         if 'modes' in payload:
             for mode in payload["modes"]:
                 self.modesetpoints[RctMode(mode["mode"])] = float(mode["value"])
 
         currentstate = RctState(payload.get('state', None))
-
         self.state.on_next(RoomState(setpoint, temperature, humidity, power, mode, currentstate, payload))
 
     async def set_target_temperature(self, setpoint: float):
-        # Validate that new setpoint is within allowed ranges.
-        # if above/below allowed values, set to the edge value
         setpointrange = self.bridge.rctsetpointallowedvalues[RctMode(self.state.value.mode)]
-
         if setpointrange.Max < setpoint:
             setpoint = setpointrange.Max
-
         if setpoint < setpointrange.Min:
             setpoint = setpointrange.Min
-
-        # Store new setpoint for current mode
         self.modesetpoints[self.state.value.mode.value] = setpoint
-
         await self.bridge.send_message(Messages.SET_HEATING_STATE, {
             "roomId": self.room_id,
             "mode": self.state.value.mode.value,
@@ -128,8 +116,6 @@ class Room:
         })
 
     async def set_mode(self, mode: RctMode):
-        # Find setpoint for the mode we are about to set, and use that
-        # When transmitting heating_state message.
         newsetpoint = self.modesetpoints.get(mode)
         await self.bridge.send_message(Messages.SET_HEATING_STATE, {
             "roomId": self.room_id,
@@ -148,17 +134,13 @@ class Bridge:
     def __init__(self, ip_address: str, authkey: str, session=None):
         self.ip_address = ip_address
         self.authkey = authkey
-
         if session is None:
             session = aiohttp.ClientSession()
             closeSession = True
         else:
             closeSession = False
-
         self._session = session
         self._closeSession = closeSession
-
-        # Values determined from using setpoint slider in app.
         self.rctsetpointallowedvalues = dict({
             RctMode.Cool: RctModeRange(5.0, 20.0),
             RctMode.Eco: RctModeRange(10.0, 30.0),
@@ -168,7 +150,7 @@ class Bridge:
         self._devices = {}
         self._rooms = {}
         self.state = State.Uninitialized
-        self.on_initialized = asyncio.Event()  # Added initialization event
+        self.on_initialized = asyncio.Event()
         self.connection = None
         self.connection_subscription = None
         self.logger = lambda x: None
@@ -176,21 +158,16 @@ class Bridge:
     async def run(self):
         if self.state != State.Uninitialized:
             raise Exception("Run can only be called once at a time")
-
         self.state = State.Initializing
-
         while self.state != State.Closing:
             try:
-                # self.logger(f"Connecting...")
                 await self._connect()
                 await self.connection.pump()
             except Exception as e:
                 self.logger(f"Error: {repr(e)}")
                 await asyncio.sleep(5)
-
             if self.connection_subscription is not None:
                 self.connection_subscription.dispose()
-
         self.state = State.Uninitialized
 
     async def switch_device(self, device_id, message):
@@ -251,14 +228,15 @@ class Bridge:
         dev_type = payload["devType"]
         comp_id = payload["compId"]
         usage = payload.get("usage", 0)
-        self.logger(f"Classifying device {name} with dev_type {dev_type} and usage {usage}")
+        monitor_power = payload.get("monitorPower", False)
+        
+        # Detailed logging to debug device classification
+        self.logger(f"Classifying device {name} (device_id: {device_id}) with dev_type {dev_type}, usage {usage}, monitorPower {monitor_power}")
 
         if dev_type == 100:
-            # Check for Smartstikk devices (assuming they have 'monitorPower': True)
-            if payload.get("monitorPower", False):
-                self.logger(f"Device {name} (dev_type 100) classified as Switch (Smartstikk)")
+            if monitor_power:
+                self.logger(f"Device {name} (dev_type 100, monitorPower True) classified as Switch (Smartstikk)")
                 return Switch(self, device_id, name, comp_id, payload)
-            # Classify as Rocker if usage is 1 and not a Smartstikk
             elif int(usage) == 1:
                 self.logger(f"Device {name} (dev_type 100, usage 1) classified as Rocker")
                 return Rocker(self, device_id, name, comp_id, payload)
@@ -269,13 +247,18 @@ class Bridge:
             self.logger(f"Device {name} (dev_type 101) classified as Light")
             return Light(self, device_id, name, payload.get("dimmable", False))
         elif dev_type == 102:
+            self.logger(f"Device {name} (dev_type 102) classified as Shade")
             return Shade(self, device_id, name, comp_id)
         elif dev_type == 440:
+            self.logger(f"Device {name} (dev_type 440) classified as Heater")
             return Heater(self, device_id, name, comp_id)
         elif dev_type == 450:
+            self.logger(f"Device {name} (dev_type 450) classified as RcTouch")
             return RcTouch(self, device_id, name, comp_id)
+        elif dev_type == 220:  # Proposed condition for Rocker devices
+            self.logger(f"Device {name} (dev_type 220) classified as Rocker")
+            return Rocker(self, device_id, name, comp_id, payload)
         else:
-            # Log unhandled dev_type before defaulting to BridgeDevice
             self.logger(f"Device {name} with dev_type {dev_type} classified as BridgeDevice")
             return BridgeDevice(self, device_id, name)
 
@@ -287,65 +270,55 @@ class Bridge:
     def _handle_comp_payload(self, payload):
         comp_id = payload['compId']
         comp = self._comps.get(comp_id)
-
         if comp is None:
             comp = self._create_comp_from_payload(payload)
             if comp is None:
                 return
             self._add_comp(comp)
-
         comp.handle_state(payload)
 
     def _handle_device_payload(self, payload):
         device_id = payload['deviceId']
         device = self._devices.get(device_id)
-
         if device is None:
             device = self._create_device_from_payload(payload)
             if device is None:
                 return
             self._add_device(device)
-
         device.handle_state(payload)
 
     def _handle_room_payload(self, payload):
         room_id = payload['roomId']
         room = self._rooms.get(room_id)
-
         if room is None:
             room = self._create_room_from_payload(payload)
             if room is None:
                 return
             self._add_room(room)
-
         room.handle_state(payload)
 
     def _handle_SET_ALL_DATA(self, payload):
         if 'lastItem' in payload:
             self.state = State.Ready
             self.on_initialized.set()
-
         if 'devices' in payload:
             for device_payload in payload['devices']:
                 try:
                     self._handle_device_payload(device_payload)
                 except Exception as e:
                     self.logger(f"Failed to handle device payload: {str(e)}")
-
         if 'comps' in payload:
             for comp_payload in payload["comps"]:
                 try:
                     self._handle_comp_payload(comp_payload)
                 except Exception as e:
                     self.logger(f"Failed to handle comp payload: {str(e)}")
-
         if 'rooms' in payload:
             for room_payload in payload["rooms"]:
                 try:
                     self._handle_room_payload(room_payload)
                 except Exception as e:
                     self.logger(f"Failed to handle room payload: {str(e)}")
-
         if 'roomHeating' in payload:
             for room_payload in payload["roomHeating"]:
                 try:
