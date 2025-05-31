@@ -82,11 +82,6 @@ class RockerState(DeviceState):
 
     __repr__ = __str__
 
-# Switch classes for xcomfort outlet devices
-# Note: Relies on existing imports in devices.py:
-# - from datetime import datetime
-# - import rx (with rx.subject.BehaviorSubject access pattern)
-
 class SwitchState(DeviceState):
     def __init__(self, is_on, payload):
         super().__init__(payload)
@@ -171,7 +166,6 @@ class Shade(BridgeDevice):
     def supports_go_to(self) -> bool | None:
         """Check if the shade supports precise position control."""
         if (component := self.bridge._comps.get(self.comp_id)) is not None:
-            # Check if 'shPos' is present in the state data, indicating position control support
             return component.comp_type == 86 and "shPos" in self.__shade_state.payload
         return None
     
@@ -248,11 +242,13 @@ class Rocker(BridgeDevice):
         return f"{self.name} ({', '.join(sorted(names_of_controlled))})"
 
     def handle_state(self, payload, broadcast: bool = True) -> None:
+        print(f"Rocker {self.device_id} received state update: {payload}")
         self.payload.update(payload)
-        # Use 'curstate' instead of 'switch' to determine the state
         curstate = payload.get("curstate", self.is_on if self.is_on is not None else False)
         self.is_on = bool(curstate)
+        print(f"Rocker {self.device_id} computed is_on: {self.is_on}")
         if broadcast:
+            print(f"Rocker {self.device_id} broadcasting state: {self.is_on}")
             self.state.on_next(RockerState(self.is_on, self.payload))
 
     def __str__(self):
@@ -271,19 +267,17 @@ class Switch(BridgeDevice):
         self.state = rx.subject.BehaviorSubject(None)
 
     def handle_state(self, payload, broadcast: bool = True) -> None:
+        print(f"Switch {self.device_id} received state update: {payload}")
         self.payload.update(payload)
         switch_state = payload.get("switch", self.is_on if self.is_on is not None else False)
         self.is_on = bool(switch_state)
+        print(f"Switch {self.device_id} computed is_on: {self.is_on}")
         if broadcast:
+            print(f"Switch {self.device_id} broadcasting state: {self.is_on}")
             self.state.on_next(SwitchState(self.is_on, self.payload))
 
     async def switch(self, switch: bool):
-        """Switch the outlet on or off.
-        
-        Note: Does not immediately update self.is_on - waits for bridge
-        to send state update via handle_state(). This ensures local state
-        remains consistent with actual device state.
-        """
+        """Switch the outlet on or off."""
         await self.bridge.switch_device(self.device_id, {"switch": switch})
 
     def __str__(self):
