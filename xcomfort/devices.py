@@ -1,14 +1,17 @@
 from contextlib import nullcontext
 import rx
+from datetime import datetime
 from .messages import Messages, ShadeOperationState
 from typing import Optional
 
 class DeviceState:
     def __init__(self, payload):
-        self.raw = payload
+        self.payload = payload.copy()
 
     def __str__(self):
-        return f"DeviceState({self.raw})"
+        return f"DeviceState({self.payload})"
+
+    __repr__ = __str__
 
 class LightState(DeviceState):
     def __init__(self, switch, dimmvalue, payload):
@@ -42,15 +45,15 @@ class HeaterState(DeviceState):
     __repr__ = __str__
 
 class ShadeState(DeviceState):
-    def __init__(self):
-        self.raw = {}
+    def __init__(self, initial_payload=None):
+        super().__init__(initial_payload or {})
         self.current_state: int | None = None
         self.is_safety_enabled: bool | None = None
         self.position: int | None = None
 
     def update_from_partial_state_update(self, payload: dict) -> None:
         """Aggregate partial state updates from the bridge."""
-        self.raw.update(payload)
+        self.payload.update(payload)
         if (current_state := payload.get("curstate")) is not None:
             self.current_state = current_state
         if (safety := payload.get("shSafety")) is not None:
@@ -66,7 +69,18 @@ class ShadeState(DeviceState):
         return self.position == 100
 
     def __str__(self) -> str:
-        return f"ShadeState(current_state={self.current_state}, is_safety_enabled={self.is_safety_enabled}, position={self.position}, raw={self.raw})"
+        return f"ShadeState(current_state={self.current_state}, is_safety_enabled={self.is_safety_enabled}, position={self.position}, payload={self.payload})"
+
+class RockerState(DeviceState):
+    def __init__(self, is_on, payload):
+        super().__init__(payload)
+        self.is_on = is_on
+        self.timestamp = datetime.now()
+
+    def __str__(self):
+        return f"RockerState(is_on={self.is_on}, timestamp={self.timestamp}, payload={self.payload})"
+
+    __repr__ = __str__
 
 class BridgeDevice:
     def __init__(self, bridge, device_id, name):
@@ -132,7 +146,7 @@ class Heater(BridgeDevice):
 
 class Shade(BridgeDevice):
     def __init__(self, bridge, device_id, name, comp_id):
-        BridgeDevice.__init__(self, bridge, device_id, name)
+        super().__init__(bridge, device_id, name)
         self.comp_id = comp_id
         self.__shade_state = ShadeState()
         self.payload = {}
@@ -142,18 +156,12 @@ class Shade(BridgeDevice):
         """Check if the shade supports precise position control."""
         if (component := self.bridge._comps.get(self.comp_id)) is not None:
             # Check if 'shPos' is present in the state data, indicating position control support
-            return component.comp_type == 86 and "shPos" in self.__shade_state.raw
+            return component.comp_type == 86 and "shPos" in self.__shade_state.payload
         return None
     
     def handle_state(self, payload):
         """Update the shade state with incoming data."""
-        new_state = ShadeState()
-        new_state.raw = self.__shade_state.raw.copy()
-        new_state.current_state = self.__shade_state.current_state
-        new_state.is_safety_enabled = self.__shade_state.is_safety_enabled
-        new_state.position = self.__shade_state.position
-        new_state.update_from_partial_state_update(payload)
-        self.__shade_state = new_state
+        self.__shade_state.update_from_partial_state_update(payload)
         self.state.on_next(self.__shade_state)
 
     async def send_state(self, state, **kwargs):
@@ -204,29 +212,33 @@ class DoorSensor(DoorWindowSensor):
 
 class Rocker(BridgeDevice):
     def __init__(self, bridge, device_id, name, comp_id, payload):
-        BridgeDevice.__init__(self, bridge, device_id, name)
+        super().__init__(bridge, device_id, name)
         self.comp_id = comp_id
-        self.payload = payload
-        self.is_on: bool | None = None
-        if "curstate" in payload:
+        # Copy the payload so that DeviceState's payload remains unchanged.
+        self.payload = payload.copy() if payload else {}
+        self.is_on = None
+        if isinstance(payload, dict) and "curstate" in payload:
             self.is_on = bool(payload["curstate"])
+        elif isinstance(payload, bool):
+            self.is_on = payload
+        self.state = rx.subject.BehaviorSubject(None)
 
     @property
     def name_with_controlled(self) -> str:
-        """Name of Rocker, with the names of controlled devices in parens."""
         names_of_controlled: set[str] = set()
         for device_id in self.payload.get("controlId", []):
             device = self.bridge._devices.get(device_id)
             if device:
                 names_of_controlled.add(device.name)
-
         return f"{self.name} ({', '.join(sorted(names_of_controlled))})"
 
     def handle_state(self, payload, broadcast: bool = True) -> None:
         self.payload.update(payload)
-        self.is_on = bool(payload["curstate"])
+        # Fallback: if "curstate" key is missing, use the existing state or assume False.
+        curstate = payload.get("curstate", self.is_on if self.is_on is not None else False)
+        self.is_on = bool(curstate)
         if broadcast:
-            self.state.on_next(self.is_on)
+            self.state.on_next(RockerState(self.is_on, self.payload))
 
     def __str__(self):
-        return f'Rocker({self.device_id}, "{self.name}", is_on: {self.is_on} payload: {self.payload})'
+        return f'Rocker({self.device_id}, "{self.name}", is_on: {self.is_on}, payload: {self.payload})'
