@@ -232,8 +232,8 @@ class Rocker(BridgeDevice):
         self.comp_id = comp_id
         self.payload = payload.copy() if payload else {}
         self.is_on = None
-        if isinstance(payload, dict) and "switch" in payload:
-            self.is_on = bool(payload["switch"])
+        if isinstance(payload, dict) and "curstate" in payload:
+            self.is_on = bool(payload["curstate"])
         elif isinstance(payload, bool):
             self.is_on = payload
         self.state = rx.subject.BehaviorSubject(None)
@@ -249,9 +249,9 @@ class Rocker(BridgeDevice):
 
     def handle_state(self, payload, broadcast: bool = True) -> None:
         self.payload.update(payload)
-        # Use 'switch' instead of 'curstate' to determine the state
-        switch_state = payload.get("switch", self.is_on if self.is_on is not None else False)
-        self.is_on = bool(switch_state)
+        # Use 'curstate' instead of 'switch' to determine the state
+        curstate = payload.get("curstate", self.is_on if self.is_on is not None else False)
+        self.is_on = bool(curstate)
         if broadcast:
             self.state.on_next(RockerState(self.is_on, self.payload))
 
