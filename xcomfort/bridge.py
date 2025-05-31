@@ -254,13 +254,12 @@ class Bridge:
         self.logger(f"Classifying device {name} with dev_type {dev_type} and usage {usage}")
 
         if dev_type == 100 or dev_type == 101:
-            if payload.get("usage") == 0:
-                # Classify as Light if usage is 0
-                dimmable = payload['dimmable']
-                return Light(self, device_id, name, dimmable)
-            else:
+            if int(payload.get("usage", 0)) == 1:
                 # Classify as Switch (Rocker) if usage is 1
-                return Rocker(self, device_id, name, comp_id)
+                return Rocker(self, device_id, name, comp_id, payload)
+            else:
+                # Classify as Light if usage is 0
+                return Light(self, device_id, name, payload.get("dimmable", False))
         if dev_type == 102:
             return Shade(self, device_id, name, comp_id)
         if dev_type == 440:
