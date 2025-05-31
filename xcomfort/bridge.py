@@ -8,7 +8,7 @@ import rx.operators as ops
 from enum import Enum
 from .connection import SecureBridgeConnection, setup_secure_connection
 from .messages import Messages
-from .devices import (BridgeDevice, Light, RcTouch, Heater, Shade, Rocker)  # Added Rocker import
+from .devices import (BridgeDevice, Light, RcTouch, Heater, Shade, Rocker, Switch)  # Added Switch import
 
 class State(Enum):
     Uninitialized = 0
@@ -254,16 +254,19 @@ class Bridge:
         self.logger(f"Classifying device {name} with dev_type {dev_type} and usage {usage}")
 
         if dev_type == 100:
-            # For dev_type 100, check the usage marker.
-            if int(usage) == 1:
-                # Classify as Switch (Rocker) if usage is 1
+            # Check for Smartstikk devices (assuming they have 'monitorPower': True)
+            if payload.get("monitorPower", False):
+                self.logger(f"Device {name} (dev_type 100) classified as Switch (Smartstikk)")
+                return Switch(self, device_id, name, comp_id, payload)
+            # Classify as Rocker if usage is 1 and not a Smartstikk
+            elif int(usage) == 1:
+                self.logger(f"Device {name} (dev_type 100, usage 1) classified as Rocker")
                 return Rocker(self, device_id, name, comp_id, payload)
             else:
-                self.logger(f"Device {name} (dev_type 100) has usage {usage}: classifying as light")
-                # Classify as Light if usage is 0
+                self.logger(f"Device {name} (dev_type 100, usage {usage}) classified as Light")
                 return Light(self, device_id, name, payload.get("dimmable", False))
         elif dev_type == 101:
-            self.logger(f"Device {name} (dev_type 101) classified as light")
+            self.logger(f"Device {name} (dev_type 101) classified as Light")
             return Light(self, device_id, name, payload.get("dimmable", False))
         elif dev_type == 102:
             return Shade(self, device_id, name, comp_id)
