@@ -243,13 +243,21 @@ class Rocker(BridgeDevice):
 
     def handle_state(self, payload, broadcast: bool = True) -> None:
         print(f"Rocker {self.device_id} received state update: {payload}")
+        # Update the stored payload
         self.payload.update(payload)
+        # Compute the legacy state using 'curstate'
         curstate = payload.get("curstate", self.is_on if self.is_on is not None else False)
         self.is_on = bool(curstate)
-        print(f"Rocker {self.device_id} computed is_on: {self.is_on}")
+        print(f"Rocker {self.device_id} computed legacy is_on: {self.is_on}")
+        
+        # Compute the new simple boolean state from payload['state']
+        state_value = payload.get("state", "0")
+        simple_state = str(state_value) == "1"
+        print(f"Rocker {self.device_id} computed simple state: {simple_state}")
+        
         if broadcast:
-            print(f"Rocker {self.device_id} broadcasting state: {self.is_on}")
-            self.state.on_next(RockerState(self.is_on, self.payload))
+            # Broadcast only the boolean state
+            self.state.on_next(simple_state)
 
     def __str__(self):
         return f'Rocker({self.device_id}, "{self.name}", is_on: {self.is_on}, payload: {self.payload})'
