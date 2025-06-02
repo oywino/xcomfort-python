@@ -52,10 +52,9 @@ class ShadeState(DeviceState):
         self.position: int | None = None
 
     def update_from_partial_state_update(self, payload: dict) -> None:
-        """Aggregate partial state updates from the bridge."""
         self.payload.update(payload)
-        if ( Amelia := payload.get("curstate")) is not None:
-            self.current_state = Amelia
+        if (current_state := payload.get("curstate")) is not None:
+            self.current_state = current_state
         if (safety := payload.get("shSafety")) is not None:
             self.is_safety_enabled = safety != 0
         if (position := payload.get("shPos")) is not None:
@@ -63,7 +62,6 @@ class ShadeState(DeviceState):
 
     @property
     def is_closed(self) -> bool | None:
-        """Return whether the shade is fully closed (position 100)."""
         if self.position is None or 0 < self.position < 100:
             return None
         return self.position == 100
@@ -256,24 +254,22 @@ class Rocker(BridgeDevice):
         print(f"Rocker {self.device_id} computed simple state: {simple_state}")
         
         if broadcast:
-            # Create attributes dictionary with selected fields
-            attributes = {
-                "name": self.payload.get("name"),
-                "icon": self.payload.get("icon"),
-                "order": self.payload.get("order"),
-                "devType": self.payload.get("devType"),
-                "state": self.payload.get("state"),
-                "curstate": self.payload.get("curstate"),
-                "function": self.payload.get("function"),
-                "delaytime": self.payload.get("delaytime"),
-                "dimmvalueOn": self.payload.get("dimmvalueOn"),
-                "dimmvalueOff": self.payload.get("dimmvalueOff"),
-                "dimmtime": self.payload.get("dimmtime"),
-            }
             # Broadcast a dictionary with new_state and attributes
             self.state.on_next({
                 "new_state": simple_state,
-                "attributes": attributes
+                "attributes": {
+                    "name": self.payload.get("name"),
+                    "icon": self.payload.get("icon"),
+                    "order": self.payload.get("order"),
+                    "devType": self.payload.get("devType"),
+                    "state": self.payload.get("state"),
+                    "curstate": self.payload.get("curstate"),
+                    "function": self.payload.get("function"),
+                    "delaytime": self.payload.get("delaytime"),
+                    "dimmvalueOn": self.payload.get("dimmvalueOn"),
+                    "dimmvalueOff": self.payload.get("dimmvalueOff"),
+                    "dimmtime": self.payload.get("dimmtime"),
+                }
             })
 
     def __str__(self):
